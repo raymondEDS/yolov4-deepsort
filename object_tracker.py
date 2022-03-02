@@ -1,3 +1,4 @@
+import object_size
 import os
 # comment out below line to enable tensorflow logging outputs
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -32,12 +33,13 @@ flags.DEFINE_string('model', 'yolov4', 'yolov3 or yolov4')
 flags.DEFINE_string('video', './data/video/test.mp4', 'path to input video or set to 0 for webcam')
 flags.DEFINE_string('output', None, 'path to output video')
 flags.DEFINE_string('output_format', 'XVID', 'codec used in VideoWriter when saving video to file')
+
 flags.DEFINE_float('iou', 0.45, 'iou threshold')
 flags.DEFINE_float('score', 0.50, 'score threshold')
 flags.DEFINE_boolean('dont_show', False, 'dont show video output')
 flags.DEFINE_boolean('info', False, 'show detailed info of tracked objects')
+flags.DEFINE_string('sort', 'class', 'what are you sorting by class name or size')
 flags.DEFINE_boolean('count', False, 'count objects being tracked on screen')
-
 def main(_argv):
     # Definition of the parameters
     max_cosine_distance = 0.4
@@ -101,7 +103,7 @@ def main(_argv):
             print('Video has ended or failed, try a different video format!')
             break
         frame_num +=1
-        print('Frame #: ', frame_num)
+        #print('Frame #: ', frame_num)
         frame_size = frame.shape[:2]
         image_data = cv2.resize(frame, (input_size, input_size))
         image_data = image_data / 255.
@@ -157,10 +159,10 @@ def main(_argv):
         class_names = utils.read_class_names(cfg.YOLO.CLASSES)
 
         # by default allow all classes in .names file
-        allowed_classes = list(class_names.values())
+        #allowed_classes = list(class_names.values())
         
         # custom allowed classes (uncomment line below to customize tracker for only people)
-        #allowed_classes = ['person']
+        allowed_classes = ['cup','mouse','cell phone']
 
         # loop through objects and use class index to get class name, allow only classes in allowed_classes list
         names = []
@@ -176,7 +178,7 @@ def main(_argv):
         count = len(names)
         if FLAGS.count:
             cv2.putText(frame, "Objects being tracked: {}".format(count), (5, 35), cv2.FONT_HERSHEY_COMPLEX_SMALL, 2, (0, 255, 0), 2)
-            print("Objects being tracked: {}".format(count))
+            #print("Objects being tracked: {}".format(count))
         # delete detections that are not in allowed_classes
         bboxes = np.delete(bboxes, deleted_indx, axis=0)
         scores = np.delete(scores, deleted_indx, axis=0)
@@ -201,13 +203,22 @@ def main(_argv):
         tracker.update(detections)
 
         # update tracks
+        class_location_dict={}
+        track_size_dict={}
         for track in tracker.tracks:
             if not track.is_confirmed() or track.time_since_update > 1:
                 continue 
             bbox = track.to_tlbr()
             class_name = track.get_class()
+
+            #put each tracked object into dictionary
+            x_mid_point = (bbox[0]+bbox[2])/2
+            size_bbox = (bbox[2]-bbox[0]) * (bbox[3]-bbox[1])
+            class_location_dict[class_name] = x_mid_point
+            track_size_dict[str(track.track_id)] = size_bbox
             
         # draw bbox on screen
+        #don't need
             color = colors[int(track.track_id) % len(colors)]
             color = [i * 255 for i in color]
             cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
@@ -217,10 +228,40 @@ def main(_argv):
         # if enable info flag then print details about each track
             if FLAGS.info:
                 print("Tracker ID: {}, Class: {},  BBox Coords (xmin, ymin, xmax, ymax): {}".format(str(track.track_id), class_name, (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))))
+                #TODO
+                #Save this information into data file for my "front-end" to process
+                #Make it so I am not tracking every single frame that is occuring or else that would overload the csv
+                #we can use the centroid method
+                # 
+        #print(class_location_dict)        
+        if FLAGS.sort=='class':
+            #print('befoe if',len(list(class_location_dict.keys())))
+            if count>1:
+                if object_size.sort_dict(class_location_dict):
+                    width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    mid_point = int(width/2)
+                    hmid_point = int(height/2)
+
+                    #this setup taken from https://gist.github.com/xcsrz/8938a5d4a47976c745407fe2788c813a
+                    # setup text
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    text = "SUCESS!!"
+
+                    # get boundary of this text
+                    textsize = cv2.getTextSize(text, font, 1, 2)[0]
+
+                    # get coords based on boundary
+                    textX = int((frame.shape[1] - textsize[0]) / 2)
+                    textY = int((frame.shape[0] + textsize[1]) / 2)
+
+                    # add text centered on image
+                    cv2.putText(frame, text, (textX, textY ), font, 1, (255, 0, 0), 2)
+                    #end of snippet
 
         # calculate frames per second of running detections
         fps = 1.0 / (time.time() - start_time)
-        print("FPS: %.2f" % fps)
+        #print("FPS: %.2f" % fps)
         result = np.asarray(frame)
         result = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         
@@ -231,6 +272,10 @@ def main(_argv):
         if FLAGS.output:
             out.write(result)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
+        elif cv2.waitKey(1) == ord('c'):
+            img_name = "opencv_frame_{}.png".format(img_counter)
+            cv2.imwrite(img_name, frame)
+            print('Captured Image')
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
