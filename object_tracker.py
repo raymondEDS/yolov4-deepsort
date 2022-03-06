@@ -159,10 +159,10 @@ def main(_argv):
         class_names = utils.read_class_names(cfg.YOLO.CLASSES)
 
         # by default allow all classes in .names file
-        #allowed_classes = list(class_names.values())
+        allowed_classes = list(class_names.values())
         
         # custom allowed classes (uncomment line below to customize tracker for only people)
-        allowed_classes = ['cup','mouse','cell phone']
+        #allowed_classes = ['cup','mouse','cell phone']
 
         # loop through objects and use class index to get class name, allow only classes in allowed_classes list
         names = []
@@ -204,7 +204,8 @@ def main(_argv):
 
         # update tracks
         class_location_dict={}
-        track_size_dict={}
+        trackID_size_dict={}
+        trackID_location_dict={}
         for track in tracker.tracks:
             if not track.is_confirmed() or track.time_since_update > 1:
                 continue 
@@ -215,10 +216,10 @@ def main(_argv):
             x_mid_point = (bbox[0]+bbox[2])/2
             size_bbox = (bbox[2]-bbox[0]) * (bbox[3]-bbox[1])
             class_location_dict[class_name] = x_mid_point
-            track_size_dict[str(track.track_id)] = size_bbox
+            trackID_size_dict[str(track.track_id)] = size_bbox
+            trackID_location_dict[str(track.track_id)] = x_mid_point
             
         # draw bbox on screen
-        #don't need
             color = colors[int(track.track_id) % len(colors)]
             color = [i * 255 for i in color]
             cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
@@ -232,17 +233,30 @@ def main(_argv):
                 #Save this information into data file for my "front-end" to process
                 #Make it so I am not tracking every single frame that is occuring or else that would overload the csv
                 #we can use the centroid method
-                # 
+                 
         #print(class_location_dict)        
         if FLAGS.sort=='class':
             #print('befoe if',len(list(class_location_dict.keys())))
-            if count>1:
-                if object_size.sort_dict(class_location_dict):
-                    width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    mid_point = int(width/2)
-                    hmid_point = int(height/2)
+            if count>2:
+                if object_size.sort_dict_by_key(class_location_dict):
+                    #this setup taken from https://gist.github.com/xcsrz/8938a5d4a47976c745407fe2788c813a
+                    # setup text
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    text = "SUCESS!!"
 
+                    # get boundary of this text
+                    textsize = cv2.getTextSize(text, font, 1, 2)[0]
+
+                    # get coords based on boundary
+                    textX = int((frame.shape[1] - textsize[0]) / 2)
+                    textY = int((frame.shape[0] + textsize[1]) / 2)
+
+                    # add text centered on image
+                    cv2.putText(frame, text, (textX, textY ), font, 1, (255, 0, 0), 2)
+                    #end of snippet
+        elif FLAGS.sort == 'size':
+            if count>2:
+                if object_size.sort_two_dict_by_elements(trackID_size_dict, trackID_location_dict): #(size_dic, loc_dic)
                     #this setup taken from https://gist.github.com/xcsrz/8938a5d4a47976c745407fe2788c813a
                     # setup text
                     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -273,7 +287,7 @@ def main(_argv):
             out.write(result)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
         elif cv2.waitKey(1) == ord('c'):
-            img_name = "opencv_frame_{}.png".format(img_counter)
+            img_name = "opencv_frame_{}.png".format('img_counter')
             cv2.imwrite(img_name, frame)
             print('Captured Image')
     cv2.destroyAllWindows()
